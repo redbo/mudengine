@@ -1,16 +1,23 @@
 package main
 
-// TERMDASH
-
 import (
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net"
+	"time"
 
+	"github.com/gdamore/tcell"
+
+	"github.com/redbo/mudengine/headlesstcell"
 	"golang.org/x/crypto/ssh"
 )
+
+type windowResizer interface {
+	WindowResize(w, h int)
+}
 
 func main() {
 	config := &ssh.ServerConfig{
@@ -62,7 +69,7 @@ func main() {
 			log.Fatalf("Could not accept channel: %v", err)
 		}
 
-		term := newTerminal(channel)
+		var term tcell.Screen
 
 		go func(in <-chan *ssh.Request) {
 			for req := range in {
@@ -76,26 +83,106 @@ func main() {
 					termName := string(req.Payload[4 : termLen+4])
 					cols := binary.BigEndian.Uint32(req.Payload[termLen+4 : termLen+8])
 					rows := binary.BigEndian.Uint32(req.Payload[termLen+8 : termLen+12])
-					fmt.Println(term, cols, rows)
-					term.SetInfo(int(cols), int(rows), termName)
-					req.Reply(true, nil)
+					term, err = headlesstcell.NewScreen(channel, termName, int(cols), int(rows))
+					if err := term.Init(); err != nil {
+						req.Reply(false, nil)
+					} else {
+						req.Reply(true, nil)
+					}
 				case "window-change":
 					cols := binary.BigEndian.Uint32(req.Payload[0:4])
 					rows := binary.BigEndian.Uint32(req.Payload[4:8])
-					term.SetSize(int(cols), int(rows))
-					fmt.Println("Window change", term, cols, rows)
+					if wr, ok := term.(windowResizer); ok {
+						wr.WindowResize(int(cols), int(rows))
+					}
 				}
 			}
 		}(requests)
 
 		go func() {
+			time.Sleep(5 * time.Second) // TODO: wait for pty req a smarter way
 			defer channel.Close()
-			for {
-				err := term.ProcessInput()
-				if err != nil {
-					break
-				}
-			}
+			run(term)
 		}()
 	}
+}
+
+func run(s tcell.Screen) {
+	tcell.SetEncodingFallback(tcell.EncodingFallbackASCII)
+
+	s.SetStyle(tcell.StyleDefault.
+		Foreground(tcell.ColorBlack).
+		Background(tcell.ColorWhite))
+	s.Clear()
+
+	quit := make(chan struct{})
+	go func() {
+		for {
+			ev := s.PollEvent()
+			switch ev := ev.(type) {
+			case *tcell.EventKey:
+				switch ev.Key() {
+				case tcell.KeyEscape, tcell.KeyEnter:
+					close(quit)
+					return
+				case tcell.KeyCtrlL:
+					s.Sync()
+				}
+			case *tcell.EventResize:
+				s.Sync()
+			}
+		}
+	}()
+
+	cnt := 0
+	dur := time.Duration(0)
+loop:
+	for {
+		select {
+		case <-quit:
+			break loop
+		case <-time.After(time.Millisecond * 50):
+		}
+		start := time.Now()
+		makebox(s)
+		cnt++
+		dur += time.Now().Sub(start)
+	}
+
+	s.Fini()
+	fmt.Printf("Finished %d boxes in %s\n", cnt, dur)
+	fmt.Printf("Average is %0.3f ms / box\n", (float64(dur)/float64(cnt))/1000000.0)
+}
+
+func makebox(s tcell.Screen) {
+	w, h := s.Size()
+
+	if w == 0 || h == 0 {
+		return
+	}
+
+	glyphs := []rune{'@', '#', '&', '*', '=', '%', 'Z', 'A'}
+
+	lx := rand.Int() % w
+	ly := rand.Int() % h
+	lw := rand.Int() % (w - lx)
+	lh := rand.Int() % (h - ly)
+	st := tcell.StyleDefault
+	gl := ' '
+	if s.Colors() > 256 {
+		rgb := tcell.NewHexColor(int32(rand.Int() & 0xffffff))
+		st = st.Background(rgb)
+	} else if s.Colors() > 1 {
+		st = st.Background(tcell.Color(rand.Int() % s.Colors()))
+	} else {
+		st = st.Reverse(rand.Int()%2 == 0)
+		gl = glyphs[rand.Int()%len(glyphs)]
+	}
+
+	for row := 0; row < lh; row++ {
+		for col := 0; col < lw; col++ {
+			s.SetCell(lx+col, ly+row, st, gl)
+		}
+	}
+	s.Show()
 }
