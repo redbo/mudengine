@@ -77,7 +77,7 @@ func main() {
 					cols := binary.BigEndian.Uint32(req.Payload[termLen+4 : termLen+8])
 					rows := binary.BigEndian.Uint32(req.Payload[termLen+8 : termLen+12])
 					fmt.Println(term, cols, rows)
-					term.Init(int(cols), int(rows), termName)
+					term.SetInfo(int(cols), int(rows), termName)
 					req.Reply(true, nil)
 				case "window-change":
 					cols := binary.BigEndian.Uint32(req.Payload[0:4])

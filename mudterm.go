@@ -1,24 +1,27 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"fmt"
-	"image"
 	"io"
 
-	"github.com/mum4k/termdash/cell"
+	"github.com/gdamore/tcell"
 	"github.com/xo/terminfo"
 )
 
-type terminal struct {
-	c          io.ReadWriter
-	cols, rows int
-	term       *terminfo.Terminfo
-	outbuf     *bytes.Buffer
+type cell struct {
+	c     rune
+	style tcell.Style
 }
 
-func (t *terminal) Init(cols, rows int, term string) error {
+type terminal struct {
+	c                io.ReadWriter
+	cols, rows       int
+	term             *terminfo.Terminfo
+	current, updated []cell
+	style            tcell.Style
+}
+
+func (t *terminal) SetInfo(cols, rows int, term string) error {
 	t.cols = cols
 	t.rows = rows
 	var err error
@@ -26,9 +29,9 @@ func (t *terminal) Init(cols, rows int, term string) error {
 	if err != nil {
 		return err
 	}
-	t.outbuf = new(bytes.Buffer)
-	t.term.Fprintf(t.outbuf, terminfo.EnterCaMode)
-	t.term.Fprintf(t.outbuf, terminfo.ClearScreen)
+	t.current = make([]cell, cols*rows)
+	t.updated = make([]cell, cols*rows)
+	t.style = tcell.StyleDefault
 	return nil
 }
 
@@ -55,46 +58,105 @@ func newTerminal(c io.ReadWriter) *terminal {
 	return &terminal{c: c}
 }
 
-// interface for termdash.terminal.Terminal
+// interface for tcell.Screen
 
-func (t *terminal) Size() image.Point {
-	return image.Point{
-		X: t.cols,
-		Y: t.rows,
+func (t *terminal) Init() error {
+	t.term.Fprintf(t.c, terminfo.EnterCaMode)
+	t.term.Fprintf(t.c, terminfo.ClearScreen)
+	return nil
+}
+
+func (t *terminal) Fini() {
+	t.term.Fprintf(t.c, terminfo.ClearScreen)
+	t.term.Fprintf(t.c, terminfo.ExitCaMode)
+}
+
+func (t *terminal) Clear() {
+	for i := range t.updated {
+		t.updated[i].c = ' '
+		t.updated[i].style = t.style
 	}
 }
 
-// Clear clears the content of the internal back buffer, resetting all
-// cells to their default content and attributes. Sets the provided options
-// on all the cell.
-func (t *terminal) Clear(opts ...cell.Option) error {
-	return nil
+func (t *terminal) Fill(c rune, st tcell.Style) {
+	for i := range t.updated {
+		t.updated[i].c = c
+		t.updated[i].style = st
+	}
 }
 
-// Flush flushes the internal back buffer to the terminal.
-func (t *terminal) Flush() error {
-	t.c.Write(t.outbuf.Bytes())
-	t.outbuf.Reset()
-	return nil
+func (t *terminal) SetCell(x, y int, st tcell.Style, ch ...rune) {
+	t.SetContent(x, y, ch[0], nil, st)
 }
 
-// SetCursor sets the position of the cursor.
-func (t *terminal) SetCursor(p image.Point) {}
+func (t *terminal) GetContent(x, y int) (mainc rune, combc []rune, style tcell.Style, width int) {
+	cell := t.updated[x+y*t.cols]
+	return cell.c, nil, cell.style, 1
+}
 
-// HideCursos hides the cursor.
+func (t *terminal) SetContent(x, y int, mainc rune, combc []rune, st tcell.Style) {
+	t.updated[x+y*t.cols].style = st
+	t.updated[x+y*t.cols].c = mainc
+}
+
+func (t *terminal) SetStyle(style tcell.Style) {
+	t.style = style
+}
+
+func (t *terminal) ShowCursor(x int, y int) {
+	io.WriteString(t.c, t.term.Goto(y, x))
+	t.term.Fprintf(t.c, terminfo.CursorVisible)
+}
+
 func (t *terminal) HideCursor() {
-	t.term.Fprintf(t.outbuf, terminfo.CursorInvisible)
-	t.Flush()
+	t.term.Fprintf(t.c, terminfo.CursorInvisible)
 }
 
-// SetCell sets the value of the specified cell to the provided rune.
-// Use the options to specify which attributes to modify, if an attribute
-// option isn't specified, the attribute retains its previous value.
-func (t *terminal) SetCell(p image.Point, r rune, opts ...cell.Option) error {
+func (t *terminal) Size() (int, int) {
+	return t.cols, t.rows
+}
+
+func (t *terminal) PollEvent() tcell.Event {
 	return nil
 }
 
-// Event waits for the next event and returns it.
-// This call blocks until the next event or cancellation of the context.
-// Returns nil when the context gets canceled.
-func (t *terminal) Event(ctx context.Context) {}
+func (t *terminal) PostEvent(ev tcell.Event) error {
+	return tcell.ErrEventQFull
+}
+
+func (t *terminal) PostEventWait(ev tcell.Event) {
+}
+
+func (t *terminal) EnableMouse() {}
+
+func (t *terminal) DisableMouse() {}
+
+func (t *terminal) HasMouse() bool {
+	return false
+}
+
+func (t *terminal) Colors() int {
+	return 256
+}
+
+func (t *terminal) Show() {}
+
+func (t *terminal) Sync() {}
+
+func (t *terminal) CharacterSet() string {
+	return "UTF-8"
+}
+
+func (t *terminal) RegisterRuneFallback(r rune, subst string) {}
+
+func (t *terminal) UnregisterRuneFallback(r rune) {}
+
+func (t *terminal) CanDisplay(r rune, checkFallbacks bool) bool {
+	return true
+}
+
+func (t *terminal) Resize(int, int, int, int) {}
+
+func (t *terminal) HasKey(tcell.Key) bool {
+	return true
+}
