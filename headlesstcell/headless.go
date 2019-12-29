@@ -542,7 +542,6 @@ func (t *tScreen) sendFgBg(fg tcell.Color, bg tcell.Color) {
 }
 
 func (t *tScreen) drawCell(x, y int) int {
-
 	ti := t.ti
 
 	mainc, combc, style, width := t.cells.GetContent(x, y)
@@ -592,28 +591,30 @@ func (t *tScreen) drawCell(x, y int) int {
 
 	var str string
 
-	buf := make([]byte, 0, 6)
+	if width == 1 && len(combc) == 0 && t.buffering {
+		t.buf.WriteRune(mainc)
+	} else {
+		buf := make([]byte, 0, 6)
 
-	buf = t.encodeRune(mainc, buf)
-	for _, r := range combc {
-		buf = t.encodeRune(r, buf)
+		buf = t.encodeRune(mainc, buf)
+		for _, r := range combc {
+			buf = t.encodeRune(r, buf)
+		}
+
+		str = string(buf)
+		if width > 1 && str == "?" {
+			// No FullWidth character support
+			str = "? "
+			t.cx = -1
+		}
+
+		if x > t.w-width {
+			// too wide to fit; emit a single space instead
+			width = 1
+			str = " "
+		}
+		t.writeString(str)
 	}
-
-	str = string(buf)
-	if width > 1 && str == "?" {
-		// No FullWidth character support
-		str = "? "
-		t.cx = -1
-	}
-
-	// XXX: check for hazeltine not being able to display ~
-
-	if x > t.w-width {
-		// too wide to fit; emit a single space instead
-		width = 1
-		str = " "
-	}
-	t.writeString(str)
 	t.cx += width
 	t.cells.SetDirty(x, y, false)
 	if width > 1 {
@@ -884,7 +885,6 @@ func (t *tScreen) clip(x, y int) (int, int) {
 // state. Note that the screen's mouse button state is updated based on the
 // input to this function (i.e. it mutates the receiver).
 func (t *tScreen) buildMouseEvent(x, y, btn int) *tcell.EventMouse {
-
 	// XTerm mouse events only report at most one button at a time,
 	// which may include a wheel button.  Wheel motion events are
 	// reported as single impulses, while other button events are reported
@@ -948,7 +948,6 @@ func (t *tScreen) buildMouseEvent(x, y, btn int) *tcell.EventMouse {
 // contain such an event, but more bytes are necessary (partial match), and
 // false, false if the content is definitely *not* an SGR mouse record.
 func (t *tScreen) parseSgrMouse(buf *bytes.Buffer, evs *[]tcell.Event) (bool, bool) {
-
 	b := buf.Bytes()
 
 	var x, y, btn, state int
@@ -1067,7 +1066,6 @@ func (t *tScreen) parseSgrMouse(buf *bytes.Buffer, evs *[]tcell.Event) (bool, bo
 // parseXtermMouse is like parseSgrMouse, but it parses a legacy
 // X11 mouse record.
 func (t *tScreen) parseXtermMouse(buf *bytes.Buffer, evs *[]tcell.Event) (bool, bool) {
-
 	b := buf.Bytes()
 
 	state := 0
@@ -1206,7 +1204,6 @@ func (t *tScreen) scanInput(buf *bytes.Buffer, expire bool) {
 // while holding the screen's lock - the events can then be queued for
 // application processing with the lock released.
 func (t *tScreen) collectEventsFromInput(buf *bytes.Buffer, expire bool) []tcell.Event {
-
 	res := make([]tcell.Event, 0, 20)
 
 	t.Lock()

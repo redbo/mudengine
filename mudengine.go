@@ -20,6 +20,8 @@ type windowResizer interface {
 }
 
 func main() {
+	tcell.SetEncodingFallback(tcell.EncodingFallbackASCII)
+
 	config := &ssh.ServerConfig{
 		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
 			// Should use constant-time compare (or better, salt+hash) in
@@ -83,11 +85,16 @@ func main() {
 					termName := string(req.Payload[4 : termLen+4])
 					cols := binary.BigEndian.Uint32(req.Payload[termLen+4 : termLen+8])
 					rows := binary.BigEndian.Uint32(req.Payload[termLen+8 : termLen+12])
-					term, err = headlesstcell.NewScreen(channel, termName, int(cols), int(rows))
+					term, err = headlesstcell.NewScreen(channel,
+						termName, int(cols), int(rows))
 					if err := term.Init(); err != nil {
 						req.Reply(false, nil)
 					} else {
 						req.Reply(true, nil)
+						go func() {
+							defer channel.Close()
+							run(term)
+						}()
 					}
 				case "window-change":
 					cols := binary.BigEndian.Uint32(req.Payload[0:4])
@@ -98,18 +105,10 @@ func main() {
 				}
 			}
 		}(requests)
-
-		go func() {
-			time.Sleep(5 * time.Second) // TODO: wait for pty req a smarter way
-			defer channel.Close()
-			run(term)
-		}()
 	}
 }
 
 func run(s tcell.Screen) {
-	tcell.SetEncodingFallback(tcell.EncodingFallbackASCII)
-
 	s.SetStyle(tcell.StyleDefault.
 		Foreground(tcell.ColorBlack).
 		Background(tcell.ColorWhite))
@@ -161,7 +160,7 @@ func makebox(s tcell.Screen) {
 		return
 	}
 
-	glyphs := []rune{'@', '#', '&', '*', '=', '%', 'Z', 'A'}
+	glyphs := []rune{'@', '#', '&', '*', '%', 'Z', 'A', ' '}
 
 	lx := rand.Int() % w
 	ly := rand.Int() % h
@@ -176,8 +175,8 @@ func makebox(s tcell.Screen) {
 		st = st.Background(tcell.Color(rand.Int() % s.Colors()))
 	} else {
 		st = st.Reverse(rand.Int()%2 == 0)
-		gl = glyphs[rand.Int()%len(glyphs)]
 	}
+	gl = glyphs[rand.Int()%len(glyphs)]
 
 	for row := 0; row < lh; row++ {
 		for col := 0; col < lw; col++ {
