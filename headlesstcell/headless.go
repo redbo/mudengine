@@ -128,21 +128,9 @@ func (t *tScreen) Init() error {
 	}
 	ti := t.ti
 
-	/*
-		if e := t.termioInit(); e != nil {
-			return e
-		}
-	*/
-
 	if t.ti.SetFgBgRGB != "" || t.ti.SetFgRGB != "" || t.ti.SetBgRGB != "" {
 		t.truecolor = true
-	}
-	// A user who wants to have his themes honored can
-	// set this environment variable.
-	if os.Getenv("TCELL_TRUECOLOR") == "disable" {
-		t.truecolor = false
-	}
-	if !t.truecolor {
+	} else {
 		t.colors = make(map[tcell.Color]tcell.Color)
 		t.palette = make([]tcell.Color, t.Colors())
 		for i := 0; i < t.Colors(); i++ {
@@ -402,10 +390,6 @@ func (t *tScreen) Fini() {
 	default:
 		close(t.quit)
 	}
-
-	/*
-		t.termioFini()
-	*/
 }
 
 func (t *tScreen) SetStyle(style tcell.Style) {
@@ -452,7 +436,6 @@ func (t *tScreen) SetCell(x, y int, style tcell.Style, ch ...rune) {
 }
 
 func (t *tScreen) encodeRune(r rune, buf []byte) []byte {
-
 	nb := make([]byte, 6)
 	ob := make([]byte, 6)
 	num := utf8.EncodeRune(ob, r)
@@ -479,6 +462,50 @@ func (t *tScreen) encodeRune(r rune, buf []byte) []byte {
 	}
 
 	return buf
+}
+
+func (t *tScreen) sendFg(fg tcell.Color) {
+	if t.ti.Colors == 0 {
+		return
+	} else if t.truecolor {
+		if fg != tcell.ColorDefault && t.ti.SetFgRGB != "" {
+			r, g, b := fg.RGB()
+			t.TPuts(t.ti.TParm(t.ti.SetFgRGB, int(r), int(g), int(b)))
+		}
+	} else if fg != tcell.ColorDefault {
+		if v, ok := t.colors[fg]; ok {
+			fg = v
+		} else {
+			v = tcell.FindColor(fg, t.palette)
+			t.colors[fg] = v
+			fg = v
+		}
+		if t.ti.SetFg != "" {
+			t.TPuts(t.ti.TParm(t.ti.SetFg, int(fg)))
+		}
+	}
+}
+
+func (t *tScreen) sendBg(bg tcell.Color) {
+	if t.ti.Colors == 0 {
+		return
+	} else if t.truecolor {
+		if bg != tcell.ColorDefault && t.ti.SetBgRGB != "" {
+			r, g, b := bg.RGB()
+			t.TPuts(t.ti.TParm(t.ti.SetBgRGB, int(r), int(g), int(b)))
+		}
+	} else if bg != tcell.ColorDefault {
+		if v, ok := t.colors[bg]; ok {
+			bg = v
+		} else {
+			v = tcell.FindColor(bg, t.palette)
+			t.colors[bg] = v
+			bg = v
+		}
+		if t.ti.SetBg != "" {
+			t.TPuts(t.ti.TParm(t.ti.SetBg, int(bg)))
+		}
+	}
 }
 
 func (t *tScreen) sendFgBg(fg tcell.Color, bg tcell.Color) {
@@ -542,15 +569,13 @@ func (t *tScreen) sendFgBg(fg tcell.Color, bg tcell.Color) {
 }
 
 func (t *tScreen) drawCell(x, y int) int {
-	ti := t.ti
-
 	mainc, combc, style, width := t.cells.GetContent(x, y)
 	if !t.cells.Dirty(x, y) {
 		return width
 	}
 
 	if t.cy != y || t.cx != x {
-		t.TPuts(ti.TGoto(x, y))
+		t.TPuts(t.ti.TGoto(x, y))
 		t.cx = x
 		t.cy = y
 	}
@@ -560,24 +585,31 @@ func (t *tScreen) drawCell(x, y int) int {
 	}
 	if style != t.curstyle {
 		fg, bg, attrs := style.Decompose()
+		curfg, curbg, curattrs := t.curstyle.Decompose()
 
-		t.TPuts(ti.AttrOff)
+		t.TPuts(t.ti.AttrOff)
 
-		t.sendFgBg(fg, bg)
-		if attrs&tcell.AttrBold != 0 {
-			t.TPuts(ti.Bold)
+		if fg != curfg && bg != curbg {
+			t.sendFgBg(fg, bg)
+		} else if fg != curfg {
+			t.sendFg(fg)
+		} else if bg != curbg {
+			t.sendBg(bg)
 		}
-		if attrs&tcell.AttrUnderline != 0 {
-			t.TPuts(ti.Underline)
+		if attrs&tcell.AttrBold != 0 && curattrs&tcell.AttrBold == 0 {
+			t.TPuts(t.ti.Bold)
 		}
-		if attrs&tcell.AttrReverse != 0 {
-			t.TPuts(ti.Reverse)
+		if attrs&tcell.AttrUnderline != 0 && curattrs&tcell.AttrUnderline == 0 {
+			t.TPuts(t.ti.Underline)
 		}
-		if attrs&tcell.AttrBlink != 0 {
-			t.TPuts(ti.Blink)
+		if attrs&tcell.AttrReverse != 0 && curattrs&tcell.AttrReverse == 0 {
+			t.TPuts(t.ti.Reverse)
 		}
-		if attrs&tcell.AttrDim != 0 {
-			t.TPuts(ti.Dim)
+		if attrs&tcell.AttrBlink != 0 && curattrs&tcell.AttrBlink == 0 {
+			t.TPuts(t.ti.Blink)
+		}
+		if attrs&tcell.AttrDim != 0 && curattrs&tcell.AttrDim == 0 {
+			t.TPuts(t.ti.Dim)
 		}
 		t.curstyle = style
 	}
