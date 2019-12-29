@@ -1448,8 +1448,10 @@ func (t *tScreen) HasKey(k tcell.Key) bool {
 
 func (t *tScreen) Resize(int, int, int, int) {}
 
-func (t *tScreen) WindowResize(w, h int) {
+func (t *tScreen) Winch(w, h int) {
+	t.Lock()
 	t.winW = w
 	t.winH = h
+	t.Unlock()
 	t.sigwinch <- nil
 }

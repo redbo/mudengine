@@ -15,10 +15,6 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-type windowResizer interface {
-	WindowResize(w, h int)
-}
-
 func main() {
 	tcell.SetEncodingFallback(tcell.EncodingFallbackASCII)
 
@@ -48,16 +44,22 @@ func main() {
 	if err != nil {
 		log.Fatal("failed to listen for connection: ", err)
 	}
-	nConn, err := listener.Accept()
-	if err != nil {
-		log.Fatal("failed to accept incoming connection: ", err)
+	for {
+		nConn, err := listener.Accept()
+		if err != nil {
+			log.Printf("Failed to accept incoming connection: %v", err)
+			continue
+		}
+		go handleSSHConnection(nConn, config)
 	}
+}
 
-	_, chans, reqs, err := ssh.NewServerConn(nConn, config)
+func handleSSHConnection(conn net.Conn, config *ssh.ServerConfig) {
+	_, chans, reqs, err := ssh.NewServerConn(conn, config)
 	if err != nil {
-		log.Fatal("failed to handshake: ", err)
+		log.Printf("Failed to handshake: %v", err)
+		return
 	}
-
 	go ssh.DiscardRequests(reqs)
 
 	for newChannel := range chans {
@@ -84,9 +86,9 @@ func main() {
 					termLen := req.Payload[3]
 					termName := string(req.Payload[4 : termLen+4])
 					cols := binary.BigEndian.Uint32(req.Payload[termLen+4 : termLen+8])
-					rows := binary.BigEndian.Uint32(req.Payload[termLen+8 : termLen+12])
+					lines := binary.BigEndian.Uint32(req.Payload[termLen+8 : termLen+12])
 					term, err = headlesstcell.NewScreen(channel,
-						termName, int(cols), int(rows))
+						termName, int(cols), int(lines))
 					if err := term.Init(); err != nil {
 						req.Reply(false, nil)
 					} else {
@@ -97,10 +99,10 @@ func main() {
 						}()
 					}
 				case "window-change":
-					cols := binary.BigEndian.Uint32(req.Payload[0:4])
-					rows := binary.BigEndian.Uint32(req.Payload[4:8])
-					if wr, ok := term.(windowResizer); ok {
-						wr.WindowResize(int(cols), int(rows))
+					if wr, ok := term.(interface{ Winch(w, h int) }); ok {
+						cols := binary.BigEndian.Uint32(req.Payload[0:4])
+						lines := binary.BigEndian.Uint32(req.Payload[4:8])
+						wr.Winch(int(cols), int(lines))
 					}
 				}
 			}
