@@ -107,7 +107,6 @@ type tScreen struct {
 	fallback  map[rune]string
 	colors    map[tcell.Color]tcell.Color
 	palette   []tcell.Color
-	truecolor bool
 	escaped   bool
 	buttondn  bool
 
@@ -128,16 +127,12 @@ func (t *tScreen) Init() error {
 	}
 	ti := t.ti
 
-	if t.ti.SetFgBgRGB != "" || t.ti.SetFgRGB != "" || t.ti.SetBgRGB != "" {
-		t.truecolor = true
-	} else {
-		t.colors = make(map[tcell.Color]tcell.Color)
-		t.palette = make([]tcell.Color, t.Colors())
-		for i := 0; i < t.Colors(); i++ {
-			t.palette[i] = tcell.Color(i)
-			// identity map for our builtin colors
-			t.colors[tcell.Color(i)] = tcell.Color(i)
-		}
+	t.colors = make(map[tcell.Color]tcell.Color)
+	t.palette = make([]tcell.Color, t.Colors())
+	for i := 0; i < t.Colors(); i++ {
+		t.palette[i] = tcell.Color(i)
+		// identity map for our builtin colors
+		t.colors[tcell.Color(i)] = tcell.Color(i)
 	}
 
 	t.TPuts(ti.EnterCA)
@@ -467,11 +462,6 @@ func (t *tScreen) encodeRune(r rune, buf []byte) []byte {
 func (t *tScreen) sendFg(fg tcell.Color) {
 	if t.ti.Colors == 0 {
 		return
-	} else if t.truecolor {
-		if fg != tcell.ColorDefault && t.ti.SetFgRGB != "" {
-			r, g, b := fg.RGB()
-			t.TPuts(t.ti.TParm(t.ti.SetFgRGB, int(r), int(g), int(b)))
-		}
 	} else if fg != tcell.ColorDefault {
 		if v, ok := t.colors[fg]; ok {
 			fg = v
@@ -489,11 +479,6 @@ func (t *tScreen) sendFg(fg tcell.Color) {
 func (t *tScreen) sendBg(bg tcell.Color) {
 	if t.ti.Colors == 0 {
 		return
-	} else if t.truecolor {
-		if bg != tcell.ColorDefault && t.ti.SetBgRGB != "" {
-			r, g, b := bg.RGB()
-			t.TPuts(t.ti.TParm(t.ti.SetBgRGB, int(r), int(g), int(b)))
-		}
 	} else if bg != tcell.ColorDefault {
 		if v, ok := t.colors[bg]; ok {
 			bg = v
@@ -511,28 +496,6 @@ func (t *tScreen) sendBg(bg tcell.Color) {
 func (t *tScreen) sendFgBg(fg tcell.Color, bg tcell.Color) {
 	ti := t.ti
 	if ti.Colors == 0 {
-		return
-	}
-	if t.truecolor {
-		if ti.SetFgBgRGB != "" &&
-			fg != tcell.ColorDefault && bg != tcell.ColorDefault {
-			r1, g1, b1 := fg.RGB()
-			r2, g2, b2 := bg.RGB()
-			t.TPuts(ti.TParm(ti.SetFgBgRGB,
-				int(r1), int(g1), int(b1),
-				int(r2), int(g2), int(b2)))
-		} else {
-			if fg != tcell.ColorDefault && ti.SetFgRGB != "" {
-				r, g, b := fg.RGB()
-				t.TPuts(ti.TParm(ti.SetFgRGB,
-					int(r), int(g), int(b)))
-			}
-			if bg != tcell.ColorDefault && ti.SetBgRGB != "" {
-				r, g, b := bg.RGB()
-				t.TPuts(ti.TParm(ti.SetBgRGB,
-					int(r), int(g), int(b)))
-			}
-		}
 		return
 	}
 
@@ -804,9 +767,6 @@ func (t *tScreen) resize() {
 
 func (t *tScreen) Colors() int {
 	// this doesn't change, no need for lock
-	if t.truecolor {
-		return 1 << 24
-	}
 	return t.ti.Colors
 }
 
