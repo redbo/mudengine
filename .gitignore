@@ -1,4 +1,11 @@
-mudengine.exe
+mudengine
 id_rsa
 id_rsa.pub
 
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
