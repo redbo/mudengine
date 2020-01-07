@@ -125,7 +125,6 @@ func (t *tScreen) Init() error {
 	} else {
 		return tcell.ErrNoCharset
 	}
-	ti := t.ti
 
 	t.colors = make(map[tcell.Color]tcell.Color)
 	t.palette = make([]tcell.Color, t.Colors())
@@ -135,10 +134,10 @@ func (t *tScreen) Init() error {
 		t.colors[tcell.Color(i)] = tcell.Color(i)
 	}
 
-	t.TPuts(ti.EnterCA)
-	t.TPuts(ti.HideCursor)
-	t.TPuts(ti.EnableAcs)
-	t.TPuts(ti.Clear)
+	t.TPuts(t.ti.EnterCA)
+	t.TPuts(t.ti.HideCursor)
+	t.TPuts(t.ti.EnableAcs)
+	t.TPuts(t.ti.Clear)
 
 	t.quit = make(chan struct{})
 
@@ -631,7 +630,6 @@ func (t *tScreen) HideCursor() {
 }
 
 func (t *tScreen) showCursor() {
-
 	x, y := t.cursorx, t.cursory
 	w, h := t.cells.Size()
 	if x < 0 || y < 0 || x >= w || y >= h {
@@ -767,6 +765,9 @@ func (t *tScreen) resize() {
 
 func (t *tScreen) Colors() int {
 	// this doesn't change, no need for lock
+	if t.ti.Colors > 256 {
+		return 256
+	}
 	return t.ti.Colors
 }
 
@@ -1414,4 +1415,18 @@ func (t *tScreen) Winch(w, h int) {
 	t.winH = h
 	t.Unlock()
 	t.sigwinch <- nil
+}
+
+func (t *tScreen) ScrollRegion(x, y, w, h int) {
+	t.Lock()
+	for i := 0; i < h-1; i++ {
+		for j := 0; j < w; j++ {
+			mainc, combc, style, _ := t.cells.GetContent(x+j, y+i+1)
+			t.cells.SetContent(x+j, y+i, mainc, combc, style)
+		}
+	}
+	for j := 0; j < w; j++ {
+		t.cells.SetContent(x+j, y+h, ' ', nil, t.style)
+	}
+	t.Unlock()
 }

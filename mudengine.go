@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"image"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -110,6 +111,8 @@ func handleSSHConnection(conn net.Conn, config *ssh.ServerConfig) {
 	}
 }
 
+var logRect = image.Rect(5, 5, 50, 20)
+
 func run(s tcell.Screen) {
 	s.SetStyle(tcell.StyleDefault.
 		Foreground(tcell.ColorBlack).
@@ -170,10 +173,7 @@ func makebox(s tcell.Screen) {
 	lh := rand.Int() % (h - ly)
 	st := tcell.StyleDefault
 	gl := ' '
-	if s.Colors() > 256 {
-		rgb := tcell.NewHexColor(int32(rand.Int() & 0xffffff))
-		st = st.Background(rgb)
-	} else if s.Colors() > 1 {
+	if s.Colors() > 1 {
 		st = st.Background(tcell.Color(rand.Int() % s.Colors()))
 	} else {
 		st = st.Reverse(rand.Int()%2 == 0)
@@ -182,8 +182,14 @@ func makebox(s tcell.Screen) {
 
 	for row := 0; row < lh; row++ {
 		for col := 0; col < lw; col++ {
-			s.SetCell(lx+col, ly+row, st, gl)
+			if !image.Pt(lx+col, ly+row).In(logRect) {
+				s.SetCell(lx+col, ly+row, st, gl)
+			}
 		}
 	}
 	s.Show()
+}
+
+func logLine(s tcell.Screen, line string) {
+
 }
